@@ -1,14 +1,13 @@
 import * as fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { pathToFileURL } from "url";
 import { App, TFile } from "obsidian";
 import pLimit from "p-limit";
 
 type ImageType = "webp" | "png" | "jpeg";
 
 type RenderResult = {
-  fileUrl: string;
+  imageSrc: string;
   filePath: string;
 };
 
@@ -86,6 +85,21 @@ async function blobFromCanvas(canvas: HTMLCanvasElement, imageType: ImageType) {
   });
 }
 
+async function blobToDataUrl(blob: Blob) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Failed to convert blob to data URL"));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read blob"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 function resolvePdfFile(app: App, sourceFile: TFile, linktext: string) {
   const linkedFile = app.metadataCache.getFirstLinkpathDest(linktext, sourceFile.path);
   if (linkedFile instanceof TFile && PDF_EXT.test(linkedFile.path)) {
@@ -126,14 +140,15 @@ async function renderPdfPageToTempImage(
 
     await pdfPage.render({ canvasContext: context, viewport }).promise;
     const blob = await blobFromCanvas(canvas, imageType);
-    const outBuffer = Buffer.from(await blob.arrayBuffer());
+    const imageSrc = await blobToDataUrl(blob);
+    const outBuffer = new Uint8Array(await blob.arrayBuffer());
 
     const nameBase = sanitizeForFilename(`${file.path}|page:${safePage}|scale:${scale}`);
     const imagePath = path.join(tempDir, `${nameBase}.${getImageExt(imageType)}`);
     await fs.writeFile(imagePath, outBuffer);
     return {
       filePath: imagePath,
-      fileUrl: pathToFileURL(imagePath).toString(),
+      imageSrc,
     };
   } finally {
     if (pdfPage) {
@@ -209,7 +224,7 @@ export async function replaceEmbeddedPdfsWithImages({
         if (!result) {
           return;
         }
-        node.replaceWith(toImageElement(doc, node, result.fileUrl));
+        node.replaceWith(toImageElement(doc, node, result.imageSrc));
       }),
     ),
   );
