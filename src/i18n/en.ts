@@ -17,6 +17,7 @@ export default {
     displayHeader: "Display headers",
     displayFooter: "Display footer",
     printBackground: "Print background",
+    renderEmbeddedPdfsAsImages: "Render embedded PDFs as images",
     maxLevel: "Max headings level of the outline",
     displayMetadata: "PDF metadata",
     headerTemplate: "Header Template",

@@ -1,4 +1,4 @@
-import { App, MarkdownView, Menu, Plugin, type PluginManifest, TFile, TFolder } from "obsidian";
+import { App, MarkdownView, Menu, Plugin, loadPdfJs, type PluginManifest, TFile, TFolder } from "obsidian";
 import i18n, { type Lang } from "./i18n";
 import { ExportConfigModal, type TConfig } from "./modal";
 import ConfigSettingTab from "./setting";
@@ -21,6 +21,7 @@ export interface BetterExportPdfPluginSettings {
 
   printBackground: boolean;
   generateTaggedPDF: boolean;
+  renderEmbeddedPdfsAsImages: boolean;
 
   displayMetadata: boolean;
 
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS: BetterExportPdfPluginSettings = {
 
   printBackground: false,
   generateTaggedPDF: false,
+  renderEmbeddedPdfsAsImages: false,
 
   displayMetadata: false,
   debug: false,
@@ -52,6 +54,7 @@ const DEFAULT_SETTINGS: BetterExportPdfPluginSettings = {
 export default class BetterExportPdfPlugin extends Plugin {
   settings: BetterExportPdfPluginSettings;
   i18n: Lang;
+  pdfjsLib: any | null = null;
 
   constructor(app: App, manifest: PluginManifest) {
     super(app, manifest);
@@ -60,10 +63,25 @@ export default class BetterExportPdfPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    this.pdfjsLib = await loadPdfJs().catch((error) => {
+      console.warn("Failed to load PDF.js", error);
+      return null;
+    });
 
     this.registerCommand();
     this.registerSetting();
     this.registerEvents();
+  }
+
+  async getPdfJsLib() {
+    if (this.pdfjsLib) {
+      return this.pdfjsLib;
+    }
+    this.pdfjsLib = await loadPdfJs().catch((error) => {
+      console.warn("Failed to load PDF.js", error);
+      return null;
+    });
+    return this.pdfjsLib;
   }
 
   registerCommand() {

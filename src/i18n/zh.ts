@@ -21,6 +21,7 @@ export default {
     displayHeader: "显示页眉",
     displayFooter: "显示页脚",
     printBackground: "打印背景",
+    renderEmbeddedPdfsAsImages: "将嵌入的 PDF 渲染为图片",
     maxLevel: "最大标题级别",
     displayMetadata: "PDF元数据",
     headerTemplate: "页眉模板",

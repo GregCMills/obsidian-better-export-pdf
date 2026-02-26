@@ -80,6 +80,16 @@ export default class ConfigSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(this.i18n.settings.renderEmbeddedPdfsAsImages)
+      .setDesc("Replace embedded PDFs with rendered page images during export.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.renderEmbeddedPdfsAsImages).onChange(async (value) => {
+          this.plugin.settings.renderEmbeddedPdfsAsImages = value;
+          this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
       .setName("Generate tagged PDF")
       .setDesc(
         "Whether or not to generate a tagged (accessible) PDF. Defaults to false. As this property is experimental, the generated PDF may not adhere fully to PDF/UA and WCAG standards.",

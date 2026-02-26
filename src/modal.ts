@@ -6,6 +6,7 @@ import { PageSize } from "./constant";
 import i18n, { type Lang } from "./i18n";
 import BetterExportPdfPlugin from "./main";
 import { exportToPDF, getOutputFile, getOutputPath } from "./pdf";
+import { createTempPdfRenderDir, removeTempPaths, replaceEmbeddedPdfsWithImages } from "./pdfEmbedRender";
 import { createWebview, fixDoc, getAllStyles, getPatchStyle, renderMarkdown, type ParamType } from "./render";
 import { isNumber, mm2px, px2mm, safeParseFloat, safeParseInt, traverseFolder } from "./utils";
 import Progress from "./Progress.svelte";
@@ -66,6 +67,8 @@ export class ExportConfigModal extends Modal {
   scale: number;
   // @ts-ignore
   svelte: Progress;
+  tempRenderPaths: string[];
+  pdfRenderWarningShown: boolean;
 
   constructor(plugin: BetterExportPdfPlugin, file: TFile | TFolder, multiplePdf?: boolean) {
     super(plugin.app);
@@ -78,6 +81,8 @@ export class ExportConfigModal extends Modal {
     this.scale = 0.75;
     this.webviews = [];
     this.multiplePdf = multiplePdf;
+    this.tempRenderPaths = [];
+    this.pdfRenderWarningShown = false;
 
     this.config = {
       pageSize: "A4",
@@ -133,6 +138,7 @@ export class ExportConfigModal extends Modal {
   }
 
   async renderFiles(data: ParamType[], docs?: DocType[], cb?: (i: number) => void) {
+    await this.cleanupTempRenderPaths();
     const concurrency = safeParseInt(this.plugin.settings.concurrency) || 5;
     const limit = pLimit(concurrency);
 
@@ -153,9 +159,41 @@ export class ExportConfigModal extends Modal {
     if (!this.multiplePdf) {
       _docs = this.mergeDoc(_docs);
     }
-    this.docs = _docs.map(({ doc, ...rest }) => {
-      return { ...rest, doc: fixDoc(doc, doc.title) };
-    });
+    const pdfjsLib = this.plugin.settings.renderEmbeddedPdfsAsImages ? await this.plugin.getPdfJsLib() : null;
+    if (this.plugin.settings.renderEmbeddedPdfsAsImages && !pdfjsLib && !this.pdfRenderWarningShown) {
+      this.pdfRenderWarningShown = true;
+      new Notice("Failed to load PDF.js. Embedded PDFs will be exported without image rendering.");
+    }
+
+    this.docs = await Promise.all(
+      _docs.map(async ({ doc, file, ...rest }) => {
+        if (this.plugin.settings.renderEmbeddedPdfsAsImages && pdfjsLib) {
+          const tempDir = await createTempPdfRenderDir();
+          this.tempRenderPaths.push(tempDir);
+          try {
+            await replaceEmbeddedPdfsWithImages({
+              app: this.app,
+              doc,
+              sourceFile: file,
+              pdfjsLib,
+              tempDir,
+            });
+          } catch (error) {
+            console.warn("Failed to replace embedded PDF with image", error);
+          }
+        }
+        return { ...rest, file, doc: fixDoc(doc, doc.title) };
+      }),
+    );
+  }
+
+  async cleanupTempRenderPaths() {
+    if (this.tempRenderPaths.length === 0) {
+      return;
+    }
+    const paths = [...this.tempRenderPaths];
+    this.tempRenderPaths = [];
+    await removeTempPaths(paths);
   }
   parseToc(doc: Document) {
     const cache = this.getFileCache(this.file as TFile);
@@ -366,7 +404,7 @@ export class ExportConfigModal extends Modal {
         const outputPath = await getOutputPath(title);
         console.log("output:", outputPath);
         if (outputPath) {
-          await Promise.all(
+          await Promise.allSettled(
             this.webviews.map(async (wb, i) => {
               await exportToPDF(
                 `${outputPath}/${this.docs[i].file.basename}.pdf`,
@@ -376,12 +414,17 @@ export class ExportConfigModal extends Modal {
               );
             }),
           );
+          await this.cleanupTempRenderPaths();
           this.close();
         }
       } else {
         const outputFile = await getOutputFile(title, this.plugin.settings.isTimestamp);
         if (outputFile) {
-          await exportToPDF(outputFile, { ...this.plugin.settings, ...this.config }, this.webviews[0], this.docs[0]);
+          try {
+            await exportToPDF(outputFile, { ...this.plugin.settings, ...this.config }, this.webviews[0], this.docs[0]);
+          } finally {
+            await this.cleanupTempRenderPaths();
+          }
           this.close();
         }
       }
@@ -621,6 +664,7 @@ export class ExportConfigModal extends Modal {
   onClose() {
     const { contentEl } = this;
     contentEl.empty();
+    void this.cleanupTempRenderPaths();
     if (this.svelte) {
       // Remove the Counter from the ItemView.
       unmount(this.svelte);
