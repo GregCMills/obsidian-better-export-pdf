@@ -1,6 +1,6 @@
 import * as electron from "electron";
 import * as fs from "fs/promises";
-import { ButtonComponent, type FrontMatterCache, Modal, Setting, TFile, TFolder, debounce } from "obsidian";
+import { ButtonComponent, Notice, type FrontMatterCache, Modal, Setting, TFile, TFolder, debounce } from "obsidian";
 import path from "path";
 import { PageSize } from "./constant";
 import i18n, { type Lang } from "./i18n";
